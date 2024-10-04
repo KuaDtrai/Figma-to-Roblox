@@ -1,0 +1,30 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // {
+        //     "type": "npm",
+        //     "script": "install",
+        //     "group": {
+        //         "kind": "build",
+        //         "isDefault": true
+        //     },
+        //     "problemMatcher": [],
+        //     "label": "npm: install",
+        //     "detail": "install dependencies from package"
+        // },
+        {
+            "label": "tsc: watch - jsconfig.json",
+            "type": "shell",
+            "command": "tsc -w -p jsconfig.json",
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "isBackground": true,
+            "problemMatcher": [
+                "$tsc-watch"
+            ],
+            "detail": "TypeScript watch"
+        }
+    ]
+}
