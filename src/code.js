@@ -2,6 +2,7 @@ var HandledError = false;
 var CurrentNotif;
 var ImageExports = {};
 var QueuedImages = 0;
+var greatestAncestor;
 
 function QuickClose(Message) {
     if (CurrentNotif !== undefined) CurrentNotif.cancel();
@@ -37,80 +38,63 @@ function LimitDecimals(Number, Decimals) {
 }
 
 
-const Fonts = {
-    ["Thin"]: {
-        Weight: 100,
-        Style: "Normal",
-    },
-    ["ExtraLight"]: {
-        Weight: 200,
-        Style: "Normal",
-    },
-    ["Light"]: {
-        Weight: 300,
-        Style: "Normal",
-    },
-    ["Regular"]: {
-        Weight: 400,
-        Style: "Normal",
-    },
-    ["Medium"]: {
-        Weight: 500,
-        Style: "Normal",
-    },
-    ["SemiBold"]: {
-        Weight: 600,
-        Style: "Normal",
-    },
-    ["Bold"]: {
-        Weight: 700,
-        Style: "Normal",
-    },
-    ["ExtraBold"]: {
-        Weight: 800,
-        Style: "Normal",
-    },
-    ["Black"]: {
-        Weight: 900,
-        Style: "Normal",
-    },
-    ["Thin Italic"]: {
-        Weight: 100,
-        Style: "Italic",
-    },
-    ["ExtraLight Italic"]: {
-        Weight: 200,
-        Style: "Italic",
-    },
-    ["Light Italic"]: {
-        Weight: 300,
-        Style: "Italic",
-    },
-    ["Italic"]: { // Regular Italic
-        Weight: 400,
-        Style: "Italic",
-    },
-    ["Medium Italic"]: {
-        Weight: 500,
-        Style: "Italic",
-    },
-    ["SemiBold Italic"]: {
-        Weight: 600,
-        Style: "Italic",
-    },
-    ["Bold Italic"]: {
-        Weight: 700,
-        Style: "Italic",
-    },
-    ["ExtraBold Italic"]: {
-        Weight: 800,
-        Style: "Italic",
-    },
-    ["Black Italic"]: {
-        Weight: 900,
-        Style: "Italic",
-    },
-}
+const FontEnumMap = {
+    "Legacy" : 0,
+    "Arial" : 1,
+    // "Arial Bold" : 2,
+    "Source Sans Pro" : 3,
+    // "Source Sans Bold" : 4,
+    // "Source Sans Light" : 5,
+    // "SourceSansItalic" : 6,
+    "Bodoni Moda" : 7,
+    "Garamond" : 8,
+    "Cartoon" : 9,
+    "Code" : 10,
+    "Highway" : 11,
+    "SciFi" : 12,
+    "Arcade" : 13,
+    "Fantasy" : 14,
+    "Antique" : 15,
+    // "SourceSansSemibold" : 16,
+    "Gotham" : 17,
+    // "GothamMedium" : 18,
+    // "GothamBold" : 19,
+    // "GothamBlack" : 20,
+    "Amatic SC" : 21,
+    "Bangers" : 22,
+    "Creepster" : 23,
+    "Denk One" : 24,
+    "Fondamento" : 25,
+    "Fredoka One" : 26,
+    "Grenze Gotisch" : 27,
+    "Indie Flower" : 28,
+    "Josefin Sans" : 29,
+    "Jura" : 30,
+    "Kalam" : 31,
+    "Luckiest Guy" : 32,
+    "Merriweather" : 33,
+    "Michroma" : 34,
+    "Nunito" : 35,
+    "Oswald" : 36,
+    "Patrick Hand" : 37,
+    "Permanent Marker" : 38,
+    "Roboto" : 39,
+    "Roboto Condensed" : 40,
+    "Roboto Mono" : 41,
+    "Sarpanch" : 42,
+    "Special Elite" : 43,
+    "Titillium Web" : 44,
+    "Ubuntu" : 45,
+    "Builder Sans" : 46,
+    // "BuilderSansMedium" : 47,
+    // "BuilderSansBold" : 48,
+    // "BuilderSansExtraBold" : 49,
+    "Arimo" : 50,
+    // "ArimoBold" : 51,
+    "Unknown" : 100,
+    // Thêm các ánh xạ khác nếu cần
+    // Nếu không khớp, mặc định là "SourceSans"
+};
 
 const LineJoinModes = [
     "Round",
@@ -303,93 +287,40 @@ const PropertyTypes = {
         }
     },
     ["fontName"]: (Element, Properties) => {
-        const UsedFonts = Element.getStyledTextSegments(["fontName", "fontSize", "fontWeight", "fills"]);
+    const UsedFonts = Element.getStyledTextSegments(["fontName", "fontSize", "fontWeight", "fills"]);
 
-        if (UsedFonts.length === 1) {
-            Properties.Font = {
-                Family: Element.fontName.family,
-                Style: Element.fontName.style
-            }
-            return;
+    if (UsedFonts.length === 1) {
+        // Ánh xạ phông chữ Figma sang Enum.Font
+        const fontName = Element.fontName.family + (Element.fontName.style !== "Regular" ? ` ${Element.fontName.style}` : "");
+        Properties.FontEnum = FontEnumMap[fontName] || "SourceSans"; // Mặc định là SourceSans nếu không khớp
+        Properties.TextSize = Element.fontSize == figma.mixed ? 0 : Element.fontSize;
+        return;
+    }
+
+    // Xử lý RichText (nếu có nhiều phông chữ)
+    Properties.RichText = true;
+    var NewText = "";
+
+    for (var i = 0; i < UsedFonts.length; i++) {
+        const Font = UsedFonts[i];
+        const fontName = Font.fontName.family + (Font.fontName.style !== "Regular" ? ` ${Font.fontName.style}` : "");
+        const enumFont = FontEnumMap[fontName] || "SourceSans";
+
+        let NextTextSegment = `<font font="${enumFont}"`;
+        if (Font.fontSize !== Element.fontSize) {
+            NextTextSegment += ` size="${Font.fontSize}"`;
         }
-
-        Properties.RichText = true;
-
-        var PreviousFont;
-
-        var NewText = "";
-
-        function IsMulti(Font, property) {
-            if (Element[property] !== figma.mixed || Element[property] === undefined || Element[property] === Font[property] || Font[property] === undefined) {
-                return false;
-            }
-
-            return true;
+        if (Font.fills.length > 0 && Font.fills[0].type === "SOLID") {
+            const Colour = Font.fills[0].color;
+            NextTextSegment += ` color="rgb(${LimitDecimals(Colour.r * 255, 0)},${LimitDecimals(Colour.g * 255, 0)},${LimitDecimals(Colour.b * 255, 0)})"`;
+            NextTextSegment += ` transparency="${1 - Font.fills[0].opacity}"`;
         }
+        NextTextSegment += `>${Font.characters}</font>`;
+        NewText += NextTextSegment;
+    }
 
-        function Check(Font) {
-            const RblxFont = (Font.fontName && Fonts[Font.fontName.style]) || Fonts["Regular"];
-            var NextTextSegment = "";
-            var ExtraSegments = "";
-
-            if (IsMulti(Font, "fontSize")) {
-                NextTextSegment += `size="${Font.fontSize}" `;
-            }
-
-            if (IsMulti(Font, "fontName") && Font.fontName.family) {
-                NextTextSegment += `family="rbxasset://fonts/families/${Font.fontName.family}.json" `;
-            }
-
-            if (IsMulti(Font, "fontName") && Font.fontName.style) {
-                NextTextSegment += `style="${RblxFont.Style}" `;
-            }
-
-            if (IsMulti(Font, "fontWeight")) {
-                NextTextSegment += `weight="${RblxFont.Weight}" `;
-            }
-
-            if (IsMulti(Font, "fills") && Font.fills.length > 0) {
-                if (Font.fills[0].type !== "SOLID") {
-                    console.warn("Gradient text is not supported.");
-                } else {
-                    var Colour = Font.fills[0].color;
-
-                    NextTextSegment += `color="rgb(${LimitDecimals(Colour.r * 255)},${LimitDecimals(Colour.g * 255)},${LimitDecimals(Colour.b * 255)})" `;
-                    NextTextSegment += `transparency="${1 - Font.fills[0].opacity}"`
-                }
-            }
-
-            // End Segments
-            // Special Segments
-
-            if (IsMulti(Font, "textDecoration")) {
-                switch (Font.textDecoration) {
-                    case "UNDERLINE":
-                        ExtraSegments += `<u>`;
-                        break;
-                    case "STRIKETHROUGH":
-                        ExtraSegments += `<s>`;
-                        break;
-                }
-            }
-
-            // End Special Segments
-
-            if (NextTextSegment.length > 0) NewText += `<font ${NextTextSegment}>`
-
-            NewText += ExtraSegments + `${Font.characters}` + ExtraSegments.replace("<", "</");
-
-            if (NextTextSegment.length > 0) NewText += `</font>`
-        }
-
-        for (var i = 0; i < UsedFonts.length; i++) {
-            const Font = UsedFonts[i];
-
-            Check(Font);
-        }
-
-        Properties.Text = "<![CDATA[" + NewText + "]]>";
-    },
+    Properties.Text = "<![CDATA[" + NewText + "]]>";
+},
     ["strokes"]: (Element, Properties) => {
         if (Element.strokes.length == 0) {
             return;
@@ -469,16 +400,16 @@ const ElementTypes = {
             GroupOpacity: Element.opacity,
             Visible: Element.visible,
             Position: {
-                X: (Element.x + Element.width / 2) / Element.parent.width,
-                Y: (Element.y + Element.height / 2) / Element.parent.height
+                X: (Element.x + Element.width / 2) / greatestAncestor.width,
+                Y: (Element.y + Element.height / 2) / greatestAncestor.height
             },
             _OriginalPosition: {
-                X: (Element.x + Element.width / 2) / Element.parent.width,
-                Y: (Element.y + Element.height / 2) / Element.parent.height
+                X: (Element.x + Element.width / 2) / greatestAncestor.width,
+                Y: (Element.y + Element.height / 2) / greatestAncestor.height
             },
             Size: {
-                X: Element.width / Element.parent.width,
-                Y: Element.height / Element.parent.height
+                X: Element.width / greatestAncestor.width,
+                Y: Element.height / greatestAncestor.height
             },
             Children: [],
             Parent: Parent,
@@ -691,6 +622,45 @@ const ElementTypes = {
     
         return Properties;
     },
+    ["ImageButton"]: (Element, Parent) => {
+        var Properties = {
+            Class: "ImageButton",
+            Type: Element.type,
+            Name: Element.name,
+            BackgroundTransparency: 0,
+            ImageTransparency: Element.opacity,
+            Visible: Element.visible,
+            Position: {
+                X: (Element.x + Element.width / 2) / Element.parent.width,
+                Y: (Element.y + Element.height / 2) / Element.parent.height
+            },
+            Size: {
+                X: Element.width / Element.parent.width,
+                Y: Element.height / Element.parent.height
+            },
+            Rotation: Element.rotation,
+            Children: [],
+            Parent: Parent,
+            Element: Element,
+        };
+
+        // Xử lý exportSettings để xuất hình ảnh (nếu có)
+        if (PropertyTypes["exportSettings"](Element, Properties) === false) {
+            for (const Property in Element) {
+                if (Property in PropertyTypes) {
+                    if (Property === "exportSettings") continue; // Đã xử lý
+                    PropertyTypes[Property](Element, Properties);
+                }
+            }
+        }
+
+        // Nếu không có hình ảnh được xuất, xuất phần tử dưới dạng hình ảnh mặc định
+        if (!Properties.UploadId) {
+            ExportImage(Element, Properties);
+        }
+
+        return Properties;
+    },
     ["OTHER"]: (Element, Parent) => {
         var Properties = {
             Class: "ImageLabel",
@@ -856,9 +826,9 @@ function CreateRobloxElement(Properties) {
         ExtendXML(`<bool name="TextWrapped">${Properties.TextWrapped}</bool>`);
     }
 
-    if (Properties.TextScaled !== undefined) {
-        ExtendXML(`<bool name="TextScaled">${Properties.TextScaled}</bool>`);
-    }
+    // if (Properties.TextScaled !== undefined) {
+        ExtendXML(`<bool name="TextScaled">${true}</bool>`);
+    // }
 
     if (Properties.TextStrokeTransparency !== undefined) {
         ExtendXML(`<float name="TextStrokeTransparency">${1 - Properties.TextStrokeTransparency}</float>`);
@@ -876,9 +846,13 @@ function CreateRobloxElement(Properties) {
         ExtendXML(`<token name="TextYAlignment">${TextYAlignments.indexOf(Properties.TextYAlignment)}</token>`);
     }
 
-    if (Properties.Font !== undefined) {
-        const Font = Fonts[Properties.Font.Style] || Fonts["Regular"];
-        ExtendXML(`<Font name="FontFace"><Family><url>rbxasset://fonts/families/${Properties.Font.Family}.json</url></Family><Weight>${Font.Weight}</Weight><Style>${Font.Style}</Style></Font>`);
+    // if (Properties.Font !== undefined) {
+    //     const Font = Fonts[Properties.Font.Style] || Fonts["Regular"];
+    //     ExtendXML(`<Font name="FontFace"><Family><url>rbxasset://fonts/families/${Properties.Font.Family}.json</url></Family><Weight>${Font.Weight}</Weight><Style>${Font.Style}</Style></Font>`);
+    // }
+
+    if (Properties.FontEnum !== undefined) {
+    ExtendXML(`<Enum name="Font">${Properties.FontEnum}</Enum>`);
     }
 
     if (Properties.RichText !== undefined) {
@@ -924,7 +898,14 @@ function CreateRobloxElement(Properties) {
     return XML + "</Item>";
 }
 
-
+function getGreatestAncestor(node) {
+  let currentNode = node;
+  // Kiểm tra nếu node hiện tại có parent và parent không phải PageNode
+  while (currentNode.parent && currentNode.parent.type !== "PAGE") {
+    currentNode = currentNode.parent;
+  }
+  return currentNode;
+}
 
 function ConvertToRoblox(Objects) { // Converts the code into roblox xml format
     var XML = '<!--\n\tGenerated by Figma to Roblox\n\tReport any bugs/issues to NoTwistedHere#6703\n-->\n\n<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Meta name="ExplicitAutoJoints">true</Meta>';
@@ -937,6 +918,10 @@ function ConvertToRoblox(Objects) { // Converts the code into roblox xml format
 }
 
 function GetMainProperties(Object, Parent) {
+    // console.log(greatestAncestor);
+    if (Object.name.match(/BTN/)) {
+        return ElementTypes["ImageButton"](Object, Parent);
+    }
     if (ElementTypes[Object.type] !== undefined) {
         return ElementTypes[Object.type](Object, Parent);
     } else {
@@ -946,7 +931,6 @@ function GetMainProperties(Object, Parent) {
 
 async function RunPlugin() {
     // Get selected elements
-
     var SelectedElements = figma.currentPage.selection;
 
     if (SelectedElements.length == 0) {
@@ -954,18 +938,38 @@ async function RunPlugin() {
     }
 
     // Get main properties
-
-    Notify("Converting...")
+    Notify("Converting...");
+    console.log("Converting...");
 
     var Objects = [];
-
-    for (var i = 0; i < SelectedElements.length; i++) {
+    const totalElements = SelectedElements.length;
+    greatestAncestor = getGreatestAncestor(SelectedElements[0]);
+    console.log(greatestAncestor.name, greatestAncestor.type, greatestAncestor.width, greatestAncestor.height);
+    // Gửi tiến độ cho giai đoạn chuyển đổi
+    for (var i = 0; i < totalElements; i++) {
         Objects.push(GetMainProperties(SelectedElements[i]));
+        // Cập nhật tiến độ (tính bằng phần trăm)
+        const conversionProgress = ((i + 1) / totalElements) * 50; // 50% cho chuyển đổi
+        figma.ui.postMessage({
+            type: "ConversionProgress",
+            data: { progress: conversionProgress }
+        });
+        // Thêm độ trễ nhỏ để UI cập nhật mượt mà hơn
+        await new Promise(resolve => setTimeout(resolve, 10));
     }
 
-    Notify("Uploading Images...")
+    Notify("Uploading Images...");
 
-    while (QueuedImages > 0) await new Promise(resolve => setTimeout(resolve, 250));
+    // Gửi tiến độ cho giai đoạn tải lên hình ảnh
+    const totalImages = QueuedImages;
+    while (QueuedImages > 0) {
+        const uploadProgress = 50 + ((totalImages - QueuedImages) / totalImages) * 50; // 50% còn lại cho tải lên
+        figma.ui.postMessage({
+            type: "ConversionProgress",
+            data: { progress: uploadProgress }
+        });
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
 
     Notify("Formatting...");
 
@@ -983,10 +987,16 @@ async function RunPlugin() {
     });
     XML = null;
 
+    // Hoàn tất tiến độ
+    figma.ui.postMessage({
+        type: "ConversionProgress",
+        data: { progress: 100 }
+    });
+
     Notify("Successfully converted!");
 }
 
-figma.showUI(__html__);
+figma.showUI(__html__, { width: 400, height: 550 });
 
 figma.ui.onmessage = msg => {
     switch (msg.type) {
